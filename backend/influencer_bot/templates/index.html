@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Influencer Finder - Web Dashboard</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+    <div class="app-container">
+        
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="logo-area">
+                <i class="fa-solid fa-crosshairs logo-icon"></i>
+                <div class="title-meta">
+                    <h1>INFLUENCER FINDER BOT</h1>
+                    <span class="badge">PRO EDITION v2.0</span>
+                </div>
+            </div>
+            <div class="system-status" id="header-status">
+                <span class="status-dot idle"></span>
+                <span class="status-text">Idle</span>
+            </div>
+        </header>
+
+        <!-- Main Workspace Grid -->
+        <main class="dashboard-grid">
+            
+            <!-- Left Panel: Control Center & Live Logs -->
+            <section class="control-panel">
+                <div class="glass-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-sliders"></i>
+                        <h2>Scraper Control Center</h2>
+                    </div>
+                    
+                    <form id="scraper-form" class="card-body">
+                        <div class="form-group">
+                            <label for="city-input"><i class="fa-solid fa-map-pin"></i> Target City</label>
+                            <input type="text" id="city-input" placeholder="e.g. Karachi, Jhelum, London" required>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="min-followers"><i class="fa-solid fa-user-minus"></i> Min Followers</label>
+                                <input type="number" id="min-followers" value="1000" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="max-followers"><i class="fa-solid fa-user-plus"></i> Max Followers</label>
+                                <input type="number" id="max-followers" value="50000" min="0">
+                            </div>
+                        </div>
+                        
+                        <div class="action-buttons">
+                            <button type="submit" id="start-btn" class="btn btn-primary">
+                                <i class="fa-solid fa-play"></i> Start Discovery
+                            </button>
+                            <button type="button" id="stop-btn" class="btn btn-danger" disabled>
+                                <i class="fa-solid fa-stop"></i> Stop Scraper
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Live Progress Card -->
+                <div class="glass-card progress-card hidden" id="progress-container">
+                    <div class="card-header">
+                        <i class="fa-solid fa-arrows-spin fa-spin text-primary"></i>
+                        <h2>Execution Progress</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress-info">
+                            <span id="current-task-text">Running search strategies...</span>
+                            <span id="progress-ratio">0/0</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="progress-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CAPTCHA Warning Notification -->
+                <div class="glass-card captcha-card hidden" id="captcha-container">
+                    <div class="card-header captcha-header">
+                        <i class="fa-solid fa-triangle-exclamation fa-beat text-warning"></i>
+                        <h2>CAPTCHA Verification Required</h2>
+                    </div>
+                    <div class="card-body">
+                        <p>Google or Bing has displayed a verification prompt. Check the browser window opened by the bot, solve the puzzle, and click below to continue.</p>
+                        <button id="resume-btn" class="btn btn-warning btn-full">
+                            <i class="fa-solid fa-check"></i> I Solved the CAPTCHA - Resume
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Logs card -->
+                <div class="glass-card logs-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-terminal"></i>
+                        <h2>Live Console Logs</h2>
+                        <button id="clear-logs" class="btn-icon" title="Clear Console"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                    <div class="card-body terminal-container">
+                        <div class="terminal-body" id="console-logs">
+                            <div class="terminal-line system-line">[System] Web Dashboard initialized. Enter parameters and click Start.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Influencer Database & Cloud Export -->
+            <section class="data-panel">
+                <!-- Database Grid View -->
+                <div class="glass-card table-card">
+                    <div class="card-header">
+                        <div class="header-group">
+                            <i class="fa-solid fa-database"></i>
+                            <h2>Discovered Influencers</h2>
+                        </div>
+                        <div class="header-actions">
+                            <div class="search-box">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="table-search" placeholder="Search influencers...">
+                            </div>
+                            <button id="refresh-data" class="btn btn-secondary">
+                                <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="card-body table-container">
+                        <table class="data-table" id="influencers-table">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Display Name</th>
+                                    <th>Followers</th>
+                                    <th>Following</th>
+                                    <th>Posts</th>
+                                    <th>Niche</th>
+                                    <th>Email / Contact</th>
+                                    <th>Website</th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-body">
+                                <tr>
+                                    <td colspan="8" class="text-center text-muted">No records found. Run a scraper run to gather data.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Google Sheets Card & Info -->
+                <div class="glass-card sync-card">
+                    <div class="card-header">
+                        <i class="fa-solid fa-cloud-arrow-up"></i>
+                        <h2>Cloud Collaboration (Google Sheets)</h2>
+                    </div>
+                    <div class="card-body sync-body">
+                        <div class="sync-desc">
+                            <p>Directly sync your local influencer list to a Google Sheet. Share it with your marketing team automatically by entering their email address below.</p>
+                        </div>
+                        <div class="sync-inputs">
+                            <div class="form-group flex-1">
+                                <input type="email" id="sync-email" placeholder="Enter team email address (e.g. marketer@company.com)">
+                            </div>
+                            <button id="sync-btn" class="btn btn-success">
+                                <i class="fa-solid fa-file-excel"></i> Export & Sync Sheets
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Custom Script -->
+    <script src="/static/app.js"></script>
+</body>
+</html>

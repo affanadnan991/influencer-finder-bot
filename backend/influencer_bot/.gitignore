@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.DS_Store
+output/profiles.csv
+output/profiles.json
+output/profiles.db
+output/sheets_destination.json
+credentials.json
+client_secret.json
+token.json
+instagram_session.json
+.env
+.venv/

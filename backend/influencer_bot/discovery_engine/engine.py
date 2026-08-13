@@ -204,23 +204,38 @@ class DiscoveryEngine:
             return None
         time.sleep(BROWSER_DELAY + random.uniform(0.2, 0.6))
         html = self.page.content()
-        return self._extract_bio_from_html(html)
+        return self._extract_bio_from_html(html, username)
 
     @staticmethod
-    def _extract_bio_from_html(html: str) -> Optional[str]:
-        patterns = [
-            r'"biography":"((?:[^"\\]|\\.)*)"',
-            r'"biography"\s*:\s*"((?:[^"\\]|\\.)*)"',
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, html)
-            if match:
-                bio = match.group(1)
-                bio = bio.replace('\\u0026', '&').replace('\\n', ' ').replace('\\/', '/')
-                bio = re.sub(r'\\u[0-9a-fA-F]{4}', '', bio)
-                bio = re.sub(r'\s+', ' ', bio).strip()
-                return bio
-        return None
+    def _extract_bio_from_html(html: str, username: str) -> Optional[str]:
+        # Instagram no longer embeds the target profile's bio as a raw
+        # "biography" field in the page HTML — that field IS present, but it
+        # belongs to the logged-in bot account itself (PolarisViewer data), so
+        # a naive first-match regex silently returns OUR account's bio for
+        # every single profile checked instead of failing loudly.
+        #
+        # The one thing Instagram always server-renders is the SEO
+        # <meta name="description"> tag, in the form:
+        #   "<followers> Followers, ... - <full name> (@<username>) on
+        #    Instagram: "<bio text>""
+        # We use that instead, and verify "(@<username>)" is actually present
+        # before trusting the extracted text.
+        meta_match = re.search(r'<meta content="([^"]*)" name="description"', html)
+        if not meta_match:
+            return None
+        content = meta_match.group(1)
+
+        if f"(@{username})".lower() not in content.lower():
+            return None
+
+        bio_match = re.search(r'on Instagram:\s*&quot;(.*)&quot;\s*$', content, re.DOTALL)
+        if not bio_match:
+            return ""  # verified profile, but it has no bio text
+
+        bio = bio_match.group(1)
+        bio = bio.replace('&quot;', '"').replace('&amp;', '&').replace('&#39;', "'")
+        bio = re.sub(r'\s+', ' ', bio).strip()
+        return bio
 
     # ── Following List ─────────────────────────────────────────────
 

@@ -24,27 +24,26 @@ def _get_next_csv_number() -> int:
 
 
 class ProfileStore:
-    """Saves matched profiles to numbered CSV files."""
+    """Saves matched profiles to a numbered CSV file, one row at a time as they're found."""
 
     def __init__(self):
         os.makedirs(OUTPUT_DIR, exist_ok=True)
+        self.filepath: str = ""
 
-    def save_results(self, profiles: list[dict]) -> str:
-        """Save profiles to a new numbered CSV file. Returns the file path."""
-        if not profiles:
-            return ""
-
+    def start_new_file(self) -> str:
+        """Create a new numbered CSV file with just the header. Returns the file path."""
         csv_number = _get_next_csv_number()
-        filepath = os.path.join(OUTPUT_DIR, f"{csv_number}.csv")
-
-        with open(filepath, "w", encoding="utf-8", newline="") as f:
+        self.filepath = os.path.join(OUTPUT_DIR, f"{csv_number}.csv")
+        with open(self.filepath, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
             writer.writeheader()
-            for profile in profiles:
-                row = {}
-                for col in CSV_COLUMNS:
-                    row[col] = profile.get(col, "")
-                writer.writerow(row)
+        return self.filepath
 
-        print(f"\n  CSV saved: {filepath} ({len(profiles)} profiles)")
-        return filepath
+    def append_profile(self, profile: dict) -> None:
+        """Append a single matched profile to the CSV file immediately."""
+        if not self.filepath:
+            self.start_new_file()
+        row = {col: profile.get(col, "") for col in CSV_COLUMNS}
+        with open(self.filepath, "a", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+            writer.writerow(row)

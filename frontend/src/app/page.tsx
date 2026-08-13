@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import SearchForm from "@/components/SearchForm";
 import ProgressPanel from "@/components/ProgressPanel";
 import ResultsTable from "@/components/ResultsTable";
@@ -22,6 +22,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
+  const lastSavedCountRef = useRef(0);
 
   // WebSocket-driven progress
   const { status, connected } = useJobProgress(isLoading ? jobId : null);
@@ -48,6 +49,7 @@ export default function Home() {
   ) => {
     setError(null);
     setResults([]);
+    lastSavedCountRef.current = 0;
     setIsLoading(true);
 
     try {
@@ -63,7 +65,20 @@ export default function Home() {
     }
   };
 
-  // When job finishes, fetch results + refresh history
+  // Live: as soon as a new profile is matched (saved count goes up), pull it in —
+  // no need to wait for the whole job to finish before the user sees anything.
+  useEffect(() => {
+    if (!status || !jobId || status.status !== "running") return;
+    const saved = status.counters?.profiles_saved || 0;
+    if (saved > lastSavedCountRef.current) {
+      lastSavedCountRef.current = saved;
+      getResults(jobId)
+        .then((r) => setResults(r.results))
+        .catch(() => {});
+    }
+  }, [status?.counters?.profiles_saved, status?.status, jobId]);
+
+  // When job finishes, do one final fetch (covers any last-moment matches) + refresh history
   useEffect(() => {
     if (!status || !jobId) return;
 
@@ -90,8 +105,9 @@ export default function Home() {
       if (!res.ok) return;
       const statusData: JobStatus = await res.json();
 
-      // If completed, load results
-      if (statusData.status === "completed") {
+      // Load whatever's been matched so far — works for running jobs too,
+      // not just completed ones, since matches are saved as they're found.
+      if (statusData.status === "completed" || statusData.status === "running") {
         try {
           const r = await getResults(selectedJobId);
           setResults(r.results);
@@ -105,7 +121,12 @@ export default function Home() {
   };
 
   const isDone = status?.status === "completed";
+  const isRunning = status?.status === "running";
   const matchCount = status?.counters?.profiles_saved || 0;
+  // Every match is written to the CSV the moment it's found, so the download
+  // is available as soon as there's at least one row — no need to wait for
+  // the whole search to finish.
+  const showSummary = (isDone || isRunning) && matchCount > 0;
 
   return (
     <main className="min-h-screen flex flex-col bg-gray-950">
@@ -170,19 +191,35 @@ export default function Home() {
             {/* Progress */}
             {status && <ProgressPanel status={status} />}
 
-            {/* Completion Summary */}
-            {isDone && jobId && (
-              <div className="bg-gradient-to-r from-green-900/20 to-violet-900/20 border border-green-800/30 rounded-xl p-5 animate-fade-in">
+            {/* Completion / Live Summary */}
+            {showSummary && jobId && (
+              <div
+                className={`bg-gradient-to-r rounded-xl p-5 animate-fade-in border ${
+                  isDone
+                    ? "from-green-900/20 to-violet-900/20 border-green-800/30"
+                    : "from-violet-900/20 to-gray-900/20 border-violet-800/30"
+                }`}
+              >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-green-900/40 rounded-full flex items-center justify-center">
-                      <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                        isDone ? "bg-green-900/40" : "bg-violet-900/40"
+                      }`}
+                    >
+                      {isDone ? (
+                        <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <span className="w-2 h-2 bg-violet-400 rounded-full animate-pulse" />
+                      )}
                     </div>
                     <div>
                       <p className="text-sm font-medium text-white">
-                        Search complete for @{status.target}
+                        {isDone
+                          ? `Search complete for @${status.target}`
+                          : `Searching @${status.target}… saving matches live`}
                       </p>
                       <p className="text-xs text-gray-400">
                         {matchCount} {matchCount === 1 ? "profile" : "profiles"} matched out of{" "}
@@ -190,18 +227,20 @@ export default function Home() {
                       </p>
                     </div>
                   </div>
-                  {matchCount > 0 && (
-                    <a
-                      href={getDownloadUrl(jobId)}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors shadow-md shadow-green-600/20"
-                      download
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      Download CSV
-                    </a>
-                  )}
+                  <a
+                    href={getDownloadUrl(jobId)}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors shadow-md ${
+                      isDone
+                        ? "bg-green-600 hover:bg-green-500 shadow-green-600/20"
+                        : "bg-violet-600 hover:bg-violet-500 shadow-violet-600/20"
+                    }`}
+                    download
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    {isDone ? "Download CSV" : "Download so far"}
+                  </a>
                 </div>
               </div>
             )}
@@ -209,7 +248,7 @@ export default function Home() {
             {/* Results */}
             {results.length > 0 && jobId && (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-                <ResultsTable results={results} jobId={jobId} />
+                <ResultsTable results={results} jobId={jobId} isLive={isRunning} />
               </div>
             )}
 

@@ -142,10 +142,18 @@ def _run_job(job: Job) -> None:
     job.phase = "starting"
     _notify_listeners(job)
 
-    def on_progress(phase: str, detail: str, counters: dict[str, int]) -> None:
+    def on_progress(phase: str, detail: str, counters: dict[str, int], csv_path: str = "") -> None:
         job.phase = phase
         job.detail = detail
         job.counters = counters
+        if csv_path:
+            job.csv_path = csv_path
+        _notify_listeners(job)
+
+    def on_match(profile: dict) -> None:
+        # Pushed the moment a profile is matched and written to the CSV —
+        # lets the frontend show results live instead of only at the end.
+        job.results.append(profile)
         _notify_listeners(job)
 
     try:
@@ -155,25 +163,13 @@ def _run_job(job: Job) -> None:
             keywords=job.keywords,
             store=store,
             progress_callback=on_progress,
+            on_match=on_match,
         )
-        results = engine.discover(max_following=job.max_following)
+        engine.discover(max_following=job.max_following)
 
-        job.results = results
         job.counters = engine.counters
         job.status = JobStatus.COMPLETED
         job.finished_at = datetime.now().isoformat()
-
-        # Find the CSV file that was created
-        if results:
-            from config import OUTPUT_DIR
-            import os
-            csvs = sorted(
-                [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".csv")],
-                key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)),
-                reverse=True,
-            )
-            if csvs:
-                job.csv_path = os.path.join(OUTPUT_DIR, csvs[0])
 
     except Exception as exc:
         job.status = JobStatus.FAILED

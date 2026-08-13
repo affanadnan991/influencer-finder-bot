@@ -100,12 +100,11 @@ def get_status(job_id: str):
 
 @app.get("/api/results/{job_id}")
 def get_results(job_id: str):
-    """Get the matched profiles for a completed job."""
+    """Get the profiles matched so far — works while the job is still running too,
+    since matches are saved and reported to the frontend as soon as they're found."""
     job = jobs.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status.value not in ("completed", "failed"):
-        raise HTTPException(status_code=202, detail="Job still running")
     return {
         "job_id": job.id,
         "status": job.status.value,
@@ -125,12 +124,11 @@ def get_results(job_id: str):
 
 @app.get("/api/download/{job_id}")
 def download_csv(job_id: str):
-    """Download the CSV file for a completed job."""
+    """Download the CSV file for a job — available as soon as the first profile
+    is matched, since each match is written to disk immediately, not just at the end."""
     job = jobs.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job.status != jobs.JobStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail="Job not completed yet")
     if not job.csv_path or not os.path.exists(job.csv_path):
         raise HTTPException(status_code=404, detail="CSV file not found")
     filename = f"influencers_{job.target}_{job.id}.csv"

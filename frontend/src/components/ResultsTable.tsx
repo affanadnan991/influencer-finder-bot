@@ -7,11 +7,12 @@ import { getDownloadUrl } from "@/lib/api";
 interface ResultsTableProps {
   results: ProfileResult[];
   jobId: string;
+  isLive?: boolean;
 }
 
 type SortKey = "username" | "niche" | "score";
 
-export default function ResultsTable({ results, jobId }: ResultsTableProps) {
+export default function ResultsTable({ results, jobId, isLive }: ResultsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [sortAsc, setSortAsc] = useState(false);
   const [search, setSearch] = useState("");
@@ -61,8 +62,17 @@ export default function ResultsTable({ results, jobId }: ResultsTableProps) {
     <div className="space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="text-sm font-medium text-gray-300">
-          <span className="text-white font-bold">{results.length}</span> profiles found
+        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+          <span>
+            <span className="text-white font-bold">{results.length}</span>{" "}
+            {isLive ? "profiles found so far" : "profiles found"}
+          </span>
+          {isLive && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-green-400 bg-green-900/20 px-2 py-0.5 rounded-full border border-green-800/30">
+              <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+              live
+            </span>
+          )}
         </h3>
         <div className="flex items-center gap-2">
           {/* Search filter */}

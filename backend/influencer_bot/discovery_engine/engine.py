@@ -31,11 +31,13 @@ class DiscoveryEngine:
         keywords: list[str],
         store: Optional[ProfileStore] = None,
         progress_callback: Optional[Any] = None,
+        on_match: Optional[Any] = None,
     ):
         self.target = target.strip().lower().lstrip("@")
         self.keywords = [k.strip() for k in keywords if k.strip()][:7]
         self.store = store or ProfileStore()
         self.progress_callback = progress_callback
+        self.on_match = on_match
         self.browser = None
         self.context = None
         self.page = None
@@ -122,11 +124,12 @@ class DiscoveryEngine:
 
             self.counters["followings_found"] = len(followings)
             print(f"\nTotal followings collected: {len(followings)}")
-            self._report_progress("checking", f"Found {len(followings)} followings")
 
             # Step 2: Check each following
             print(f"\n--- Step 2: Checking {len(followings)} profiles ---\n")
             discovered: list[dict[str, Any]] = []
+            filepath = self.store.start_new_file()
+            self._report_progress("checking", f"Found {len(followings)} followings", csv_path=filepath)
 
             for i, username in enumerate(followings, 1):
                 print(f"[{i}/{len(followings)}] @{username}", end=" ")
@@ -152,7 +155,9 @@ class DiscoveryEngine:
                         profile["niche"] = ""
                         profile["date_collected"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         discovered.append(profile)
+                        self.store.append_profile(profile)
                         self.counters["profiles_saved"] += 1
+                        self._report_match(profile)
                         print("-> SAVED (no keyword filter)")
                     else:
                         self.counters["profiles_skipped"] += 1
@@ -167,24 +172,22 @@ class DiscoveryEngine:
                     profile["niche"] = matched_kw
                     profile["date_collected"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     discovered.append(profile)
+                    self.store.append_profile(profile)
                     self.counters["keyword_matches"] += 1
                     self.counters["profiles_saved"] += 1
-                    print(f'-> MATCH! "{matched_kw}" (score: {score})')
+                    self._report_match(profile)
+                    print(f'-> MATCH! "{matched_kw}" (score: {score}) [saved to {filepath}]')
                 else:
                     self.counters["profiles_skipped"] += 1
                     print("-> no match")
 
-            # Step 3: Save
+            # Step 3: Summary
+            print(f"\n{'='*60}")
             if discovered:
-                filepath = self.store.save_results(discovered)
-                print(f"\n{'='*60}")
                 print(f"  DONE! {len(discovered)} profiles saved to {filepath}")
-                print(f"{'='*60}")
             else:
-                filepath = ""
-                print(f"\n{'='*60}")
                 print(f"  DONE! No matching profiles found.")
-                print(f"{'='*60}")
+            print(f"{'='*60}")
 
             self._report_progress("done", f"{len(discovered)} profiles saved")
             return discovered
@@ -521,14 +524,20 @@ class DiscoveryEngine:
     def _log(self, msg: str) -> None:
         print(f"  >> {msg}")
 
-    def _report_progress(self, phase: str, detail: str = "") -> None:
+    def _report_progress(self, phase: str, detail: str = "", csv_path: str = "") -> None:
         """Report progress to the callback if set."""
         if self.progress_callback:
             self.progress_callback(
                 phase=phase,
                 detail=detail,
                 counters=dict(self.counters),
+                csv_path=csv_path or self.store.filepath,
             )
+
+    def _report_match(self, profile: dict[str, Any]) -> None:
+        """Notify the caller immediately when a profile is matched and saved."""
+        if self.on_match:
+            self.on_match(dict(profile))
 
     def get_report(self) -> dict[str, Any]:
         return {"counters": dict(self.counters)}

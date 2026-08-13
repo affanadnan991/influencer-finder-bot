@@ -28,6 +28,7 @@ export interface JobStatus {
     errors: number;
   };
   result_count: number;
+  csv_path: string;
   error: string;
   created_at: string;
   finished_at: string | null;
@@ -65,8 +66,9 @@ export async function getJobStatus(jobId: string): Promise<JobStatus> {
 }
 
 export async function getResults(jobId: string): Promise<ResultsResponse> {
+  // Works while the job is still running too — matched profiles are
+  // returned as soon as they're found, not just after completion.
   const res = await fetch(`${API_BASE}/api/results/${jobId}`);
-  if (res.status === 202) throw new Error("Job still running");
   if (!res.ok) throw new Error(`Results fetch failed: ${res.statusText}`);
   return res.json();
 }

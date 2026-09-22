@@ -106,8 +106,7 @@ class DiscoveryEngine:
         print(f"{'='*60}\n")
 
         if not self.setup_browser():
-            print("ERROR: Browser start nahi hua!")
-            return []
+            raise RuntimeError("Browser start nahi hua. Render logs aur Playwright setup check karein.")
 
         try:
             # Step 1: Collect followings
@@ -115,12 +114,10 @@ class DiscoveryEngine:
             self._report_progress("collecting", "Opening following list...")
             followings = self._collect_following(self.target, max_following=max_following)
             if not followings:
-                print("\nERROR: Following list nahi mili!")
-                print("  Possible reasons:")
-                print("  1. instagram_session.json expired — cookies refresh karo")
-                print("  2. Profile private hai")
-                print("  3. Instagram ne bot detect kar lia — thodi der baad try karo")
-                return []
+                raise RuntimeError(
+                    "Following list nahi mili. instagram_session.json missing/expired ho sakti hai, "
+                    "profile private ho sakta hai, ya Instagram ne request block ki hai."
+                )
 
             self.counters["followings_found"] = len(followings)
             print(f"\nTotal followings collected: {len(followings)}")

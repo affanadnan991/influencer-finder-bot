@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: influencer-finder-api
+    runtime: python
+    rootDir: backend/influencer_bot
+    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: HEADLESS
+        value: "true"
+      - key: OUTPUT_DIR
+        value: /tmp/output

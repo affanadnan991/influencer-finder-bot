@@ -3,7 +3,7 @@ services:
     name: influencer-finder-api
     runtime: python
     rootDir: backend/influencer_bot
-    buildCommand: pip install -r requirements.txt && python -m playwright install chromium
+    buildCommand: pip install -r requirements.txt && PLAYWRIGHT_BROWSERS_PATH=/opt/render/project/src/backend/influencer_bot/.playwright python -m playwright install chromium chromium-headless-shell
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
@@ -11,3 +11,5 @@ services:
         value: "true"
       - key: OUTPUT_DIR
         value: /tmp/output
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /opt/render/project/src/backend/influencer_bot/.playwright

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -14,16 +15,33 @@ from pydantic import BaseModel, Field
 
 import jobs
 
+
+# ── Lifespan (replaces deprecated @app.on_event) ────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Register the asyncio event loop so background threads can push WS messages."""
+    jobs.set_event_loop(asyncio.get_running_loop())
+    yield
+
+
 app = FastAPI(
     title="Instagram Influencer Finder API",
     version="1.0.0",
     description="Find relevant Instagram influencers by scanning a target profile's followings",
+    lifespan=lifespan,
 )
 
-# CORS — allow frontend (Next.js dev server on 3000)
+# CORS — allow any localhost origin (dev) + wildcard for production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,11 +83,14 @@ class StatusResponse(BaseModel):
 def start_search(req: SearchRequest):
     """Start a new influencer search job in the background."""
     keywords = req.keywords[:7]  # cap at 7
-    job = jobs.start_search(
-        target=req.target,
-        keywords=keywords,
-        max_following=req.max_following,
-    )
+    try:
+        job = jobs.start_search(
+            target=req.target,
+            keywords=keywords,
+            max_following=req.max_following,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return SearchResponse(
         job_id=job.id,
         message=f"Search started for @{job.target}",
@@ -142,7 +163,11 @@ def download_csv(job_id: str):
 @app.get("/api/jobs")
 def list_all_jobs():
     """List all jobs (for dashboard view)."""
-    return {"jobs": jobs.list_jobs()}
+    all_jobs = jobs.list_jobs()
+    # Strip csv_path from public responses (server filesystem path)
+    for j in all_jobs:
+        j.pop("csv_path", None)
+    return {"jobs": all_jobs}
 
 
 @app.get("/api/health")
@@ -151,12 +176,6 @@ def health_check():
 
 
 # ── WebSocket ─────────────────────────────────────────────────────
-
-
-@app.on_event("startup")
-async def on_startup():
-    """Register the asyncio event loop so background threads can push WS messages."""
-    jobs.set_event_loop(asyncio.get_running_loop())
 
 
 @app.websocket("/ws/progress/{job_id}")
@@ -173,8 +192,10 @@ async def ws_progress(websocket: WebSocket, job_id: str):
 
     await websocket.accept()
 
-    # Send current state immediately
-    await websocket.send_json(job.to_dict())
+    # Send current state immediately (strip csv_path)
+    initial = job.to_dict()
+    initial.pop("csv_path", None)
+    await websocket.send_json(initial)
 
     # If already finished, close right away
     if job.status in (jobs.JobStatus.COMPLETED, jobs.JobStatus.FAILED):
@@ -185,7 +206,9 @@ async def ws_progress(websocket: WebSocket, job_id: str):
     queue: asyncio.Queue = asyncio.Queue()
 
     async def on_update(data: dict):
-        await queue.put(data)
+        # Strip csv_path before sending to client
+        clean = {k: v for k, v in data.items() if k != "csv_path"}
+        await queue.put(clean)
 
     jobs.add_ws_listener(job_id, on_update)
 

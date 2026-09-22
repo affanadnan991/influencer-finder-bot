@@ -9,12 +9,14 @@ import { useJobProgress } from "@/lib/useJobProgress";
 import {
   startSearch,
   getResults,
+  getJobStatus,
   getDownloadUrl,
   type ProfileResult,
   type JobStatus,
 } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const STORAGE_KEY = "influencer_finder_active_job";
 
 export default function Home() {
   const [jobId, setJobId] = useState<string | null>(null);
@@ -23,6 +25,46 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const lastSavedCountRef = useRef(0);
+  const restoredRef = useRef(false);
+
+  // Persist jobId so HMR / page reload doesn't lose it
+  const setActiveJob = useCallback((id: string | null, loading: boolean) => {
+    setJobId(id);
+    setIsLoading(loading);
+    if (id && loading) {
+      try { sessionStorage.setItem(STORAGE_KEY, id); } catch {}
+    } else {
+      try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+    }
+  }, []);
+
+  // Restore active job on mount (survives HMR and manual refresh)
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    let savedId: string | null = null;
+    try { savedId = sessionStorage.getItem(STORAGE_KEY); } catch {}
+    if (!savedId) return;
+
+    (async () => {
+      try {
+        const s = await getJobStatus(savedId!);
+        setJobId(savedId);
+        if (s.status === "running" || s.status === "queued") {
+          setIsLoading(true);
+        } else {
+          setIsLoading(false);
+          try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+          if (s.status === "completed") {
+            const r = await getResults(savedId!);
+            setResults(r.results);
+          }
+        }
+      } catch {
+        try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+      }
+    })();
+  }, []);
 
   // WebSocket-driven progress
   const { status, connected } = useJobProgress(isLoading ? jobId : null);
@@ -50,7 +92,6 @@ export default function Home() {
     setError(null);
     setResults([]);
     lastSavedCountRef.current = 0;
-    setIsLoading(true);
 
     try {
       const res = await startSearch({
@@ -58,15 +99,14 @@ export default function Home() {
         keywords,
         max_following: maxFollowing,
       });
-      setJobId(res.job_id);
+      setActiveJob(res.job_id, true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search start failed");
       setIsLoading(false);
     }
   };
 
-  // Live: as soon as a new profile is matched (saved count goes up), pull it in —
-  // no need to wait for the whole job to finish before the user sees anything.
+  // Live results streaming
   useEffect(() => {
     if (!status || !jobId || status.status !== "running") return;
     const saved = status.counters?.profiles_saved || 0;
@@ -78,35 +118,31 @@ export default function Home() {
     }
   }, [status?.counters?.profiles_saved, status?.status, jobId]);
 
-  // When job finishes, do one final fetch (covers any last-moment matches) + refresh history
+  // Job finished
   useEffect(() => {
     if (!status || !jobId) return;
 
     if (status.status === "completed") {
-      setIsLoading(false);
+      setActiveJob(jobId, false);
       getResults(jobId)
         .then((r) => setResults(r.results))
         .catch(() => {});
       refreshHistory();
     } else if (status.status === "failed") {
-      setIsLoading(false);
+      setActiveJob(jobId, false);
       setError(status.error || "Job failed");
       refreshHistory();
     }
-  }, [status?.status, jobId, refreshHistory]);
+  }, [status?.status, jobId, refreshHistory, setActiveJob]);
 
   // Load a past job from history
   const handleHistorySelect = async (selectedJobId: string) => {
     setJobId(selectedJobId);
     setError(null);
     setIsLoading(false);
+    try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
     try {
-      const res = await fetch(`${API_BASE}/api/status/${selectedJobId}`);
-      if (!res.ok) return;
-      const statusData: JobStatus = await res.json();
-
-      // Load whatever's been matched so far — works for running jobs too,
-      // not just completed ones, since matches are saved as they're found.
+      const statusData = await getJobStatus(selectedJobId);
       if (statusData.status === "completed" || statusData.status === "running") {
         try {
           const r = await getResults(selectedJobId);
@@ -123,9 +159,6 @@ export default function Home() {
   const isDone = status?.status === "completed";
   const isRunning = status?.status === "running";
   const matchCount = status?.counters?.profiles_saved || 0;
-  // Every match is written to the CSV the moment it's found, so the download
-  // is available as soon as there's at least one row — no need to wait for
-  // the whole search to finish.
   const showSummary = (isDone || isRunning) && matchCount > 0;
 
   return (
@@ -163,22 +196,15 @@ export default function Home() {
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <SearchForm onSubmit={handleSearch} isLoading={isLoading} />
             </div>
-
-            {/* Search History */}
             {history.length > 0 && (
               <div className="bg-gray-900/50 border border-gray-800 rounded-xl p-4">
-                <SearchHistory
-                  jobs={history}
-                  onSelect={handleHistorySelect}
-                  activeJobId={jobId}
-                />
+                <SearchHistory jobs={history} onSelect={handleHistorySelect} activeJobId={jobId} />
               </div>
             )}
           </div>
 
           {/* Right column — progress + results */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Error */}
             {error && !status?.error && (
               <div className="flex items-start gap-2 bg-red-900/20 border border-red-800/50 rounded-xl p-4 animate-fade-in">
                 <svg className="w-5 h-5 text-red-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -188,25 +214,17 @@ export default function Home() {
               </div>
             )}
 
-            {/* Progress */}
             {status && <ProgressPanel status={status} />}
 
-            {/* Completion / Live Summary */}
             {showSummary && jobId && (
-              <div
-                className={`bg-gradient-to-r rounded-xl p-5 animate-fade-in border ${
-                  isDone
-                    ? "from-green-900/20 to-violet-900/20 border-green-800/30"
-                    : "from-violet-900/20 to-gray-900/20 border-violet-800/30"
-                }`}
-              >
+              <div className={`bg-gradient-to-r rounded-xl p-5 animate-fade-in border ${
+                isDone
+                  ? "from-green-900/20 to-violet-900/20 border-green-800/30"
+                  : "from-violet-900/20 to-gray-900/20 border-violet-800/30"
+              }`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        isDone ? "bg-green-900/40" : "bg-violet-900/40"
-                      }`}
-                    >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDone ? "bg-green-900/40" : "bg-violet-900/40"}`}>
                       {isDone ? (
                         <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -217,22 +235,17 @@ export default function Home() {
                     </div>
                     <div>
                       <p className="text-sm font-medium text-white">
-                        {isDone
-                          ? `Search complete for @${status.target}`
-                          : `Searching @${status.target}… saving matches live`}
+                        {isDone ? `Search complete for @${status.target}` : `Searching @${status.target}... saving matches live`}
                       </p>
                       <p className="text-xs text-gray-400">
-                        {matchCount} {matchCount === 1 ? "profile" : "profiles"} matched out of{" "}
-                        {status.counters.profiles_checked || 0} checked
+                        {matchCount} {matchCount === 1 ? "profile" : "profiles"} matched out of {status.counters.profiles_checked || 0} checked
                       </p>
                     </div>
                   </div>
                   <a
                     href={getDownloadUrl(jobId)}
                     className={`inline-flex items-center gap-1.5 px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors shadow-md ${
-                      isDone
-                        ? "bg-green-600 hover:bg-green-500 shadow-green-600/20"
-                        : "bg-violet-600 hover:bg-violet-500 shadow-violet-600/20"
+                      isDone ? "bg-green-600 hover:bg-green-500 shadow-green-600/20" : "bg-violet-600 hover:bg-violet-500 shadow-violet-600/20"
                     }`}
                     download
                   >
@@ -245,14 +258,12 @@ export default function Home() {
               </div>
             )}
 
-            {/* Results */}
             {results.length > 0 && jobId && (
               <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
                 <ResultsTable results={results} jobId={jobId} isLive={isRunning} />
               </div>
             )}
 
-            {/* Empty state */}
             {!status && !error && results.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center animate-fade-in">
                 <div className="w-16 h-16 bg-gray-800 rounded-2xl flex items-center justify-center mb-4">
@@ -270,7 +281,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="border-t border-gray-800/50 py-4 mt-auto">
         <p className="text-center text-xs text-gray-700">
           Influencer Finder &mdash; Next.js + FastAPI + WebSocket

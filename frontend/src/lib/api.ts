@@ -28,7 +28,6 @@ export interface JobStatus {
     errors: number;
   };
   result_count: number;
-  csv_path: string;
   error: string;
   created_at: string;
   finished_at: string | null;
@@ -55,7 +54,13 @@ export async function startSearch(req: SearchRequest): Promise<SearchResponse> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) throw new Error(`Search failed: ${res.statusText}`);
+  if (!res.ok) {
+    if (res.status === 409) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.detail || "A search is already running. Wait for it to finish.");
+    }
+    throw new Error(`Search failed: ${res.statusText}`);
+  }
   return res.json();
 }
 

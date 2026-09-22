@@ -125,10 +125,30 @@ def list_jobs() -> list[dict[str, Any]]:
     return [j.to_dict() for j in _jobs.values()]
 
 
+def _get_active_job() -> Optional[Job]:
+    """Return the currently running job, if any."""
+    for j in _jobs.values():
+        if j.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+            return j
+    return None
+
+
+def has_active_job() -> bool:
+    """Check if there's already a running/queued job."""
+    return _get_active_job() is not None
+
+
 def start_search(target: str, keywords: list[str], max_following: int = 200) -> Job:
-    """Create a job and run it in a background thread."""
-    job = Job(target=target, keywords=keywords, max_following=max_following)
+    """Create a job and run it in a background thread.
+    Raises RuntimeError if another job is already running."""
     with _lock:
+        active = _get_active_job()
+        if active:
+            raise RuntimeError(
+                f"A search is already running for @{active.target} (job {active.id}). "
+                f"Wait for it to finish before starting a new one."
+            )
+        job = Job(target=target, keywords=keywords, max_following=max_following)
         _jobs[job.id] = job
 
     thread = threading.Thread(target=_run_job, args=(job,), daemon=True)

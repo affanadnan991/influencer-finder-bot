@@ -397,6 +397,20 @@ class DiscoveryEngine:
             self._log("Following dialog opened successfully!")
         else:
             self.counters["errors"] += 1
+            try:
+                current_url = self.page.url
+                title = self.page.title()
+                body_text = self.page.locator("body").inner_text(timeout=2000).lower()
+                markers = [
+                    marker
+                    for marker in ("log in", "login", "challenge", "suspicious", "try again")
+                    if marker in body_text
+                ]
+                self._log(
+                    f"  Diagnostic: url={current_url}, title={title!r}, markers={markers}"
+                )
+            except Exception:
+                pass
             self._log("ALL strategies FAILED to open following dialog")
 
         return dialog_opened
